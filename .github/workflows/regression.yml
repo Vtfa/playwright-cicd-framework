@@ -1,0 +1,113 @@
+name: Full Regression Suite
+
+on:
+  schedule:
+    # 🔹 Runs automatically every day at 2:00 AM UTC
+    - cron: '0 2 * * *'
+  
+  # 🔹 Allows manual execution from the GitHub Actions UI
+  workflow_dispatch:
+    inputs:
+      grep_tag:
+        description: 'Filter tests by tag (e.g. @smoke, @regression, or leave blank for all)'
+        required: false
+        default: ''
+      project:
+        description: 'Browser project (chromium, firefox, webkit, or all)'
+        required: false
+        default: 'all'
+
+jobs:
+  test-shards:
+    name: Run Shard ${{ matrix.shard }}
+    timeout-minutes: 30
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # 🔹 Run across 2 parallel runners
+        shard: [1/2, 2/2]
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm ci
+
+      - name: Install Playwright Browsers & OS Deps
+        run: npx playwright install --with-deps
+
+      # 🔹 Run tests on this shard and output a 'blob' report
+      - name: Run Tests (Shard ${{ matrix.shard }})
+        run: |
+          TAG="${{ github.event.inputs.grep_tag }}"
+          PROJ="${{ github.event.inputs.project }}"
+          
+          CMD="npx playwright test --shard=${{ matrix.shard }} --reporter=blob"
+          
+          if [ -n "$TAG" ]; then
+            CMD="$CMD --grep $TAG"
+          fi
+          
+          if [ -n "$PROJ" ] && [ "$PROJ" != "all" ]; then
+            CMD="$CMD --project=$PROJ"
+          fi
+          
+          echo "Executing: $CMD"
+          $CMD
+        env:
+          CI: true
+
+      # 🔹 Upload this shard's blob report
+      - name: Upload Blob Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: blob-report-${{ strategy.job-index }}
+          path: blob-report/
+          retention-days: 1
+
+  merge-reports:
+    name: Merge Reports & Publish
+    needs: [test-shards]
+    if: always()
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+
+      - name: Install Dependencies
+        run: npm ci
+
+      # 🔹 Download blob reports from all shards
+      - name: Download All Blob Reports
+        uses: actions/download-artifact@v4
+        with:
+          path: all-blob-reports
+          pattern: blob-report-*
+          merge-multiple: true
+
+      # 🔹 Merge into a single HTML report
+      - name: Merge Reports into HTML
+        run: npx playwright merge-reports --reporter html ./all-blob-reports
+
+      # 🔹 Upload consolidated HTML report
+      - name: Upload Consolidated HTML Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-regression-report
+          path: playwright-report/
+          retention-days: 14

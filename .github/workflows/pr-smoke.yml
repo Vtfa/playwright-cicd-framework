@@ -1,0 +1,44 @@
+name: PR Smoke Check
+on:
+  pull_request:
+    branches: [ main, master ]
+
+# Cancel older in-progress runs on the same PR when new commits are pushed
+concurrency:
+  group: pr-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    name: Run Smoke Tests (Chromium)
+    timeout-minutes: 10
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v6
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: lts/*
+          cache: 'npm'
+
+      - name: Install Project Dependencies
+        run: npm ci
+
+      # Fast: Only download Chromium and its dependencies
+      - name: Install Chromium Only
+        run: npx playwright install --with-deps chromium
+
+      # Run only smoke-tagged tests on Chromium
+      - name: Run Smoke Tests
+        run: npx playwright test --project=chromium --grep @smoke
+
+      # General report upload matching official Playwright style
+      - name: Upload Test Report
+        uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: pr-smoke-report
+          path: playwright-report/
+          retention-days: 30
