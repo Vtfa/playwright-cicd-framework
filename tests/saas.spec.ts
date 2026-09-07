@@ -6,6 +6,11 @@ import { SignUpPage } from '../pages/SignUpPage';
 // Run tests in this file as unauthenticated guest (ignore global user.json)
 test.use({ storageState: { cookies: [], origins: [] } });
 
+test('homepage loads and displays title', {tag: '@smoke'}, async({page}) =>{
+    await page.goto('/');
+    await expect(page).toHaveTitle(/TestDino/i);
+});
+
 test('create account', {tag: '@smoke'}, async({page}) =>{
     const signUpPage = new SignUpPage(page);
     await signUpPage.goto();

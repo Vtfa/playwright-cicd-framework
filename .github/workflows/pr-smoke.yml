@@ -2,6 +2,7 @@ name: PR Smoke Check
 on:
   pull_request:
     branches: [ main, master ]
+  workflow_dispatch:
 
 # Cancel older in-progress runs on the same PR when new commits are pushed
 concurrency:
